@@ -16,10 +16,11 @@ function main() {
     let sudoku;
 
     requestAnimationFrame(function() {
+        //These requestAnimationFrame calls are to give the computer time to show these messages
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.font = "20px Arial";
         ctx.textBaseline = "top";
-        ctx.fillText("Generating...", 0, 0);
+        ctx.fillText("Generating sudoku...", 0, 0);
 
         requestAnimationFrame(function() {
             //I've set the sudoku generator to terminate and return null if it's taking too long
@@ -32,7 +33,7 @@ function main() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 ctx.font = "20px Arial";
                 ctx.textBaseline = "top";
-                ctx.fillText("Depopulating...", 0, 0);
+                ctx.fillText("Emptying cells...", 0, 0);
                 
                 //Remove as many squares as possible
                 requestAnimationFrame(function() {
@@ -129,7 +130,7 @@ function drawSudoku(sudoku) {
         let y = 50 * Math.floor(i / 9);
         let x = 50 * (i % 9);
         
-        //Draw number inside cell
+        //Draw number inside cell if it isn't empty
         if (sudoku[i] >= 0) {
             //Convert the number to a string so that it can be passed to fillText and measureText
             let text = String(1 + sudoku[i]);
@@ -142,7 +143,9 @@ function drawSudoku(sudoku) {
             ctx.fillStyle = "#000000";
             ctx.textBaseline = "middle"; //Easy way to center vertically
             ctx.fillText(text, x + (50 - textbox.width) / 2, y + 25);
+
         } else if (drawPmarks) {
+            //If the cell is empty and the user wants to see the pencilmarks, draw them
             for (let n = 0; n < 9; n++) {
                 if (pmarks[i] & (1 << n)) {
                     //Convert to string to pass to fillText and measureText
@@ -156,7 +159,7 @@ function drawSudoku(sudoku) {
 
                     ctx.fillStyle = "#000000";
                     ctx.textBaseline = "middle"; //Easy way to center vertically
-                    ctx.fillText(text, x + nx + (16 - textbox.width) / 2, y + ny + 8);
+                    ctx.fillText(text, 1 + x + nx + (16 - textbox.width) / 2, y + ny + 10);
                 }
             }
         }
@@ -417,14 +420,21 @@ function depopulateSudoku(sudoku) {
 
 //Count how many possible solutions a sudoku has
 //This will be used to ensure that the sudoku generated has only one unique solution
-function solveSudoku(sudoku) {
-    //JavaScript's call stack is not seaworthy, so I have to do fake recursion
+function solveSudoku(sudoku, countSteps = false) {
+    let stepCount = 0; //Count how many steps it took to arrive at a solution.
+
+    /*This solver uses the Nishio method, which is a fancy name for recursive guessing.
+      Normally I would implement this with a simple recursive function, but the extreme
+      unseaworthiness of JavaScript's call stack has forced my hand.
+
+      I shall show JavaScript how it's done.
+    */
     let pmarks = getPencilmarks(sudoku);
 
-    let tree = [];
+    let tree = []; //This list is my "call stack".
     let count = 0;
 
-    //Find the square with the fewest pencilmarks.
+    //Start off the "call stack" with the first call to the "recursive solver".
     let m = 0;
     for (let i = 0; i < 81; i++) {
         if (sudoku[i] === -1 && (sudoku[m] !== -1 || countPencilmarks(pmarks[i]) < countPencilmarks(pmarks[m]))) {
@@ -433,23 +443,32 @@ function solveSudoku(sudoku) {
     }
     tree.push({marks: [...listPencilmarks(pmarks[m])], cell: m, i: 0});
     
+    //Now let's do some "recursion".
     let backtrack = false;
     do {
-        //Get index of last tree item
+        //The "function" at the top of the "call stack" is the one that gets run.
         let t = tree.length - 1;
 
-        //Get the sudoku's updated pencilmarks
         if (tree[t].i >= tree[t].marks.length || backtrack) {
-            //Endpoint reached; backtrack
+            /*
+            If this iteration of the "recursive" solver function has tried all the possible values
+             of its cell (or has some other reason to backtrack), then we "return" to the
+             previous function in the stack.
+            */
             backtrack = false;
-            sudoku[tree[t].cell] = -1;
+            sudoku[tree[t].cell] = -1; //Make sure to clean up the mess we make
             tree.pop();
         } else {
-            //Keep going deeper
+            /*This is the main body of the "function".
+               Each iteration of the solver is assigned a cell and a few possible guesses for
+               that cell's value.
+            */
+
+            //Choose the first guess that hasn't already been guessed.
             sudoku[tree[t].cell] = tree[t].marks[tree[t].i];
             tree[t].i++;
             
-            //If a solution has been found, backtrack
+            //If a solution has been found, increment the count and backtrack.
             if (!sudoku.includes(-1)) {
                 count++;
                 backtrack = true;
@@ -458,13 +477,14 @@ function solveSudoku(sudoku) {
 
             pmarks = getPencilmarks(sudoku);
 
-            //If an impass has been reached, backtrack
+            //If an impass has been reached, it means we made a wrong guess at some point.
+            // In these cases, the only thing to do is to backtrack.
             if (pmarks.includes(0b000000000)) {
                 backtrack = true;
                 continue;
             }
 
-            //Find the square with the fewest pencilmarks
+            //Find the cell with the fewest pencilmarks
             m = 0;
             for (let i = 0; i < 81; i++) {
                 if (sudoku[i] === -1 && (sudoku[m] !== -1 || countPencilmarks(pmarks[i]) < countPencilmarks(pmarks[m]))) {
@@ -475,7 +495,7 @@ function solveSudoku(sudoku) {
             //"Recurse" deeper
             tree.push({marks: [...listPencilmarks(pmarks[m])], cell: m, i: 0});
         }
-    } while (tree.length > 0 && count < 2);
+    } while (tree.length > 0 && (countSteps || count < 2));
 
     return count;
 }
